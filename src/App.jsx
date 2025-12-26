@@ -25,6 +25,9 @@ import {
   ExternalLink,
   CheckCircle,
   XCircle,
+  Target,
+  Timer,
+  Flame,
   History
 } from 'lucide-react';
 
@@ -44,15 +47,17 @@ const App = () => {
   const [confidenceScores, setConfidenceScores] = useState({});
   const [sessionHistory, setSessionHistory] = useState([]);
 
-  const apiKey = ""; 
-  const API_URL = "http://127.0.0.1:5000/api/matchs/all";
+  const apiKey = import.meta.env.VITE_API_KEY;
+  const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000/api/matchs/all';
 
   const mockData = [
     { id: "1", championnat: "Premier League", heure_match: "21:00", minute: "65", home: "Man Utd", away: "Newcastle", score: "0-0", cote_1: "1.90", cote_2: "3.40", open_cote_1: "1.35", open_cote_2: "6.40" },
     { id: "2", championnat: "Ligue 1", heure_match: "19:00", minute: "72", home: "PSG", away: "Lorient", score: "1-0", cote_1: "1.12", cote_2: "15.00", open_cote_1: "1.15", open_cote_2: "12.00" },
     { id: "3", championnat: "Serie A", heure_match: "20:45", minute: "58", home: "Juventus", away: "Empoli", score: "0-0", cote_1: "1.95", cote_2: "5.00", open_cote_1: "1.25", open_cote_2: "9.00" },
     { id: "4", championnat: "Liga", heure_match: "21:00", minute: "15", home: "Real Madrid", away: "Getafe", score: "0-0", cote_1: "1.22", cote_2: "12.00", open_cote_1: "1.20", open_cote_2: "13.00" },
-    { id: "5", championnat: "Bundesliga", heure_match: "15:30", minute: "Terminé", home: "Bayern", away: "Dortmund", score: "2-1", cote_1: "1.55", cote_2: "5.00", open_cote_1: "1.55", open_cote_2: "5.00", result: "won" }
+    { id: "5", championnat: "Bundesliga", heure_match: "15:30", minute: "Terminé", home: "Bayern", away: "Dortmund", score: "2-1", cote_1: "1.55", cote_2: "5.00", open_cote_1: "1.55", open_cote_2: "5.00", result: "won" },
+    { id: "6", championnat: "Premier League", heure_match: "17:30", minute: "Terminé", home: "Chelsea", away: "Brighton", score: "1-1", cote_1: "1.40", cote_2: "6.50", open_cote_1: "1.40", open_cote_2: "6.50", result: "draw" },
+    { id: "7", championnat: "Ligue 1", heure_match: "21:00", minute: "Terminé", home: "Lyon", away: "Marseille", score: "2-0", cote_1: "2.10", cote_2: "3.20", open_cote_1: "2.10", open_cote_2: "3.20", result: "won" }
   ];
 
   const fetchMatchs = useCallback(async () => {
@@ -60,9 +65,21 @@ const App = () => {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 3000);
-      const response = await fetch(API_URL, { signal: controller.signal });
+      
+      const response = await fetch(API_URL, { 
+        signal: controller.signal,
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+      
       clearTimeout(timeoutId);
-      if (!response.ok) throw new Error(`Erreur HTTP: ${response.status}`);
+      
+      if (!response.ok) {
+        throw new Error(`Erreur HTTP: ${response.status}`);
+      }
+      
       const data = await response.json();
       
       // Séparer les matchs terminés
@@ -74,14 +91,15 @@ const App = () => {
       setIsOffline(false);
       setLastUpdate(new Date().toLocaleTimeString());
     } catch (error) {
+      // Utiliser les données mock en cas d'erreur (backend indisponible)
       setIsOffline(true);
       setMatchs(mockData.filter(m => m.minute !== "Terminé"));
       setSessionHistory(mockData.filter(m => m.minute === "Terminé"));
-      setLastUpdate(new Date().toLocaleTimeString() + " (Simulé)");
+      setLastUpdate(new Date().toLocaleTimeString() + " (Mode Démo)");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [API_URL]);
 
   useEffect(() => {
     fetchMatchs();
@@ -107,31 +125,35 @@ const App = () => {
   };
 
   const playAlertSound = (type = 'opportunity') => {
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    const oscillator = audioContext.createOscillator();
-    const gainNode = audioContext.createGain();
-    
-    oscillator.connect(gainNode);
-    gainNode.connect(audioContext.destination);
-    
-    if (type === 'critical') {
-      [0, 0.15, 0.3].forEach(delay => {
-        const osc = audioContext.createOscillator();
-        const gain = audioContext.createGain();
-        osc.connect(gain);
-        gain.connect(audioContext.destination);
-        osc.frequency.value = 880;
-        gain.gain.setValueAtTime(0.3, audioContext.currentTime + delay);
-        gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + delay + 0.1);
-        osc.start(audioContext.currentTime + delay);
-        osc.stop(audioContext.currentTime + delay + 0.1);
-      });
-    } else {
-      oscillator.frequency.value = 523.25;
-      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
-      oscillator.start(audioContext.currentTime);
-      oscillator.stop(audioContext.currentTime + 0.5);
+    try {
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      
+      if (type === 'critical') {
+        [0, 0.15, 0.3].forEach(delay => {
+          const osc = audioContext.createOscillator();
+          const gain = audioContext.createGain();
+          osc.connect(gain);
+          gain.connect(audioContext.destination);
+          osc.frequency.value = 880;
+          gain.gain.setValueAtTime(0.3, audioContext.currentTime + delay);
+          gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + delay + 0.1);
+          osc.start(audioContext.currentTime + delay);
+          osc.stop(audioContext.currentTime + delay + 0.1);
+        });
+      } else {
+        oscillator.frequency.value = 523.25;
+        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.5);
+      }
+    } catch (error) {
+      console.log('Audio non disponible');
     }
   };
 
@@ -316,7 +338,6 @@ const App = () => {
   };
 
   const getBookmakerLink = (match) => {
-    const teams = `${match.home}-${match.away}`.replace(/ /g, '-').toLowerCase();
     return `https://1xbet.com/search?query=${encodeURIComponent(match.home + ' ' + match.away)}`;
   };
 
@@ -513,33 +534,62 @@ const App = () => {
 
   return (
     <div className="min-h-screen bg-black text-slate-100 font-sans">
-      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-black/95 backdrop-blur-xl border-t border-slate-800/50 p-2 flex justify-around md:top-0 md:bottom-auto md:border-t-0 md:border-b md:h-16 md:items-center shadow-xl shadow-black/50">
-        <div className="hidden md:flex items-center gap-2 absolute left-6">
+      <nav className="fixed top-0 left-0 right-0 z-50 bg-black/95 backdrop-blur-xl border-b border-slate-800/50 h-16 flex items-center justify-between px-4 md:px-8 shadow-xl shadow-black/50">
+        <button 
+          onClick={() => setActiveTab('home')}
+          className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer"
+        >
           <Trophy className="text-cyan-400" size={24} />
           <span className="text-xl font-black tracking-tighter">FOOTY<span className="text-cyan-400">TRACKER</span></span>
-        </div>
+        </button>
         
+        <div className="flex items-center gap-2">
+          {[
+            { id: 'home', icon: LayoutDashboard, label: 'Accueil' },
+            { id: 'favs', icon: Star, label: 'Favoris' },
+            { id: 'ultra', icon: Zap, label: 'Ultra' },
+            { id: 'goliath', icon: AlertTriangle, label: 'Goliath' },
+            { id: 'history', icon: History, label: 'Historique' },
+            { id: 'all', icon: List, label: 'Tous' }
+          ].map(item => (
+            <button
+              key={item.id}
+              onClick={() => setActiveTab(item.id)}
+              className={`hidden md:flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${
+                activeTab === item.id ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg shadow-cyan-500/50' : 'text-slate-500 hover:text-cyan-400 hover:bg-slate-900/50'
+              }`}
+            >
+              <item.icon size={18} />
+              <span className="text-xs font-black uppercase tracking-widest">{item.label}</span>
+            </button>
+          ))}
+        </div>
+      </nav>
+
+      {/* Navigation mobile en bas */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-black/95 backdrop-blur-xl border-t border-slate-800/50 p-2 flex justify-around shadow-xl shadow-black/50">
         {[
           { id: 'home', icon: LayoutDashboard, label: 'Accueil' },
           { id: 'favs', icon: Star, label: 'Favoris' },
           { id: 'ultra', icon: Zap, label: 'Ultra' },
           { id: 'goliath', icon: AlertTriangle, label: 'Goliath' },
+          { id: 'history', icon: History, label: 'Hist.' },
           { id: 'all', icon: List, label: 'Tous' }
         ].map(item => (
           <button
             key={item.id}
             onClick={() => setActiveTab(item.id)}
-            className={`flex flex-col md:flex-row items-center gap-1 md:gap-2 px-3 py-1 rounded-xl transition-all ${
-              activeTab === item.id ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg shadow-cyan-500/50' : 'text-slate-500 hover:text-cyan-400 hover:bg-slate-900/50'
+            className={`flex flex-col items-center gap-1 px-2 py-1 rounded-xl transition-all ${
+              activeTab === item.id ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg shadow-cyan-500/50' : 'text-slate-500 hover:text-cyan-400'
             }`}
           >
             <item.icon size={18} />
-            <span className="text-[9px] md:text-xs font-black uppercase tracking-widest">{item.label}</span>
+            <span className="text-[9px] font-black uppercase tracking-widest">{item.label}</span>
           </button>
         ))}
       </nav>
 
-      <main className="pb-24 pt-8 md:pt-24 px-4 md:px-8 max-w-7xl mx-auto">
+      <main className="pt-20 pb-20 md:pb-8 px-4 md:px-8 max-w-[1920px] mx-auto">
         {activeTab === 'home' && (
           <div className="space-y-8 animate-in fade-in duration-500">
             <header className="flex items-center gap-4">
@@ -555,13 +605,13 @@ const App = () => {
                   <p className="text-slate-500 text-sm">Mise à jour : {lastUpdate}</p>
                   <span className={`flex items-center gap-1 text-xs ${isOffline ? 'text-amber-400' : 'text-lime-400'}`}>
                     {isOffline ? <WifiOff size={14} /> : <Wifi size={14} />}
-                    {isOffline ? 'Simulation' : 'Live'}
+                    {isOffline ? 'Mode Démo' : 'Live'}
                   </span>
                 </div>
               </div>
             </header>
 
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 gap-4">
               <div className="bg-gradient-to-br from-cyan-600/20 to-blue-700/20 border border-cyan-500/30 p-6 rounded-2xl shadow-xl shadow-cyan-900/20 relative overflow-hidden group backdrop-blur-sm">
                 <Star className="absolute -right-4 -bottom-4 text-cyan-400/10 w-32 h-32 group-hover:scale-110 transition-transform" />
                 <h3 className="text-cyan-400/80 text-[10px] font-black uppercase tracking-widest mb-2">Favoris Détectés</h3>
@@ -586,6 +636,42 @@ const App = () => {
                 <button onClick={() => setActiveTab('goliath')} className="mt-3 text-[10px] bg-red-500/20 hover:bg-red-500/30 px-3 py-1.5 rounded-full backdrop-blur-md transition-all border border-red-500/50 text-red-400 font-bold">Alerte</button>
               </div>
 
+              <div className="bg-gradient-to-br from-purple-600/20 to-pink-700/20 border border-purple-500/30 p-6 rounded-2xl shadow-xl shadow-purple-900/20 relative overflow-hidden group backdrop-blur-sm">
+                <Target className="absolute -right-4 -bottom-4 text-purple-400/10 w-32 h-32 group-hover:scale-110 transition-transform" />
+                <h3 className="text-purple-400/80 text-[10px] font-black uppercase tracking-widest mb-2">Matchs Critiques</h3>
+                <div className="text-4xl font-black text-white">
+                  {matchs.filter(m => getAlgoStatus(m) === 'CRITIQUE').length}
+                </div>
+                <p className="text-slate-400 text-[10px] mt-1">55-75' à 0-0</p>
+                <div className="mt-3 text-[10px] text-purple-400 font-bold">Zone Rouge</div>
+              </div>
+
+              <div className="bg-gradient-to-br from-lime-600/20 to-green-700/20 border border-lime-500/30 p-6 rounded-2xl shadow-xl shadow-lime-900/20 relative overflow-hidden group backdrop-blur-sm">
+                <TrendingUp className="absolute -right-4 -bottom-4 text-lime-400/10 w-32 h-32 group-hover:scale-110 transition-transform" />
+                <h3 className="text-lime-400/80 text-[10px] font-black uppercase tracking-widest mb-2">Momentum Actif</h3>
+                <div className="text-4xl font-black text-white">
+                  {matchs.filter(m => getMomentum(m) !== null).length}
+                </div>
+                <p className="text-slate-400 text-[10px] mt-1">Pression détectée</p>
+                <div className="mt-3 text-[10px] text-lime-400 font-bold">En Live</div>
+              </div>
+
+              <div className="bg-gradient-to-br from-orange-600/20 to-red-700/20 border border-orange-500/30 p-6 rounded-2xl shadow-xl shadow-orange-900/20 relative overflow-hidden group backdrop-blur-sm">
+                <Flame className="absolute -right-4 -bottom-4 text-orange-400/10 w-32 h-32 group-hover:scale-110 transition-transform" />
+                <h3 className="text-orange-400/80 text-[10px] font-black uppercase tracking-widest mb-2">Value Bets</h3>
+                <div className="text-4xl font-black text-white">
+                  {matchs.filter(m => {
+                    const c1 = parseFloat(m.cote_1);
+                    const c2 = parseFloat(m.cote_2);
+                    const o1 = m.open_cote_1 ? parseFloat(m.open_cote_1) : c1;
+                    const o2 = m.open_cote_2 ? parseFloat(m.open_cote_2) : c2;
+                    return (c1 > o1 + 0.2) || (c2 > o2 + 0.2);
+                  }).length}
+                </div>
+                <p className="text-slate-400 text-[10px] mt-1">Cotes en hausse</p>
+                <div className="mt-3 text-[10px] text-orange-400 font-bold">Opportunités</div>
+              </div>
+
               <div className="bg-slate-950/80 border border-slate-800/50 p-6 rounded-2xl relative backdrop-blur-sm">
                 <h3 className="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-4">Actions IA</h3>
                 <button 
@@ -594,7 +680,7 @@ const App = () => {
                   className="w-full py-3 bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-xl font-black text-xs flex items-center justify-center gap-2 hover:shadow-lg hover:shadow-cyan-500/50 transition-all disabled:opacity-50 mb-3"
                 >
                   <Sparkles size={16} className={isAnalyzing ? "animate-spin" : ""} />
-                  {isAnalyzing ? 'ANALYSE...' : 'RAPPORT GLOBAL'}
+                  {isAnalyzing ? 'ANALYSE...' : 'RAPPORT'}
                 </button>
                 
                 <button
@@ -610,11 +696,11 @@ const App = () => {
                   }`}
                 >
                   {radarMode ? <Volume2 size={14} /> : <VolumeX size={14} />}
-                  {radarMode ? 'RADAR ACTIF' : 'ACTIVER RADAR'}
+                  {radarMode ? 'RADAR ON' : 'RADAR OFF'}
                 </button>
                 
                 <div className="mt-4 flex items-center justify-between text-[10px]">
-                  <span className="text-slate-500 uppercase font-bold">Total matchs</span>
+                  <span className="text-slate-500 uppercase font-bold">Total</span>
                   <span className="text-lime-400 font-black text-lg tabular-nums">{matchs.length}</span>
                 </div>
               </div>
@@ -662,6 +748,44 @@ const App = () => {
                     <HistoryMatch key={idx} m={m} />
                   ))}
                 </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'history' && (
+          <div className="animate-in fade-in duration-300">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-6">
+              <div>
+                <h2 className="text-2xl font-black uppercase tracking-tight flex items-center gap-2">
+                  <History className="text-slate-500" size={28} />
+                  Historique Complet
+                </h2>
+                <p className="text-slate-500 text-xs mt-1">
+                  {sessionHistory.length} matchs terminés - {sessionHistory.filter(m => {
+                    const [s1, s2] = m.score.split('-').map(s => parseInt(s) || 0);
+                    const c1 = parseFloat(m.cote_1);
+                    const c2 = parseFloat(m.cote_2);
+                    if (c1 < c2) return s1 > s2;
+                    return s2 > s1;
+                  }).length} prédictions correctes
+                </p>
+              </div>
+              <button onClick={fetchMatchs} className="p-3 bg-slate-950 rounded-xl border border-slate-800 hover:border-cyan-500 transition-all shadow-lg">
+                <RefreshCw size={18} className={loading ? "animate-spin text-cyan-400" : "text-slate-500"} />
+              </button>
+            </div>
+
+            {sessionHistory.length > 0 ? (
+              <div className="space-y-3">
+                {sessionHistory.map((m, idx) => (
+                  <HistoryMatch key={idx} m={m} />
+                ))}
+              </div>
+            ) : (
+              <div className="py-20 text-center">
+                <History size={48} className="mx-auto text-slate-800 mb-4" />
+                <p className="text-slate-600 font-bold uppercase tracking-widest">Aucun match terminé pour le moment</p>
               </div>
             )}
           </div>
